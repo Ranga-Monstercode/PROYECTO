@@ -31,10 +31,10 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOWED_ORIGINS = [
+"""CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",        # si corres Next.js en tu mismo PC
     "http://192.168.1.101:3000",    # si corres Next.js en otro PC con esta IP
-]
+]"""
 
 # Application definition
 
