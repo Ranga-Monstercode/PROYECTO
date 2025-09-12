@@ -16,18 +16,14 @@ RUN apt-get update \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY requirements.txt /app/
+# Copy requirements first for better caching
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy project
-COPY . /app/
-
-# Collect static files
-RUN python manage.py collectstatic --noinput
+COPY . .
 
 # Expose port
 EXPOSE 8000
 
-# Run the application
-CMD ["sh", "-c", "gunicorn gestioncitas.wsgi:application --bind 0.0.0.0:${PORT:-8000}"]
+CMD ["sh", "-c", "python manage.py collectstatic --noinput && gunicorn gestioncitas.wsgi:application --bind 0.0.0.0:${PORT:-8000}"]
