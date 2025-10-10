@@ -5,13 +5,18 @@ from rest_framework import status, viewsets
 from .models import Usuario, Paciente, Administrador, Medico, Agenda, Cita, Notificacion, Horario
 from .serializers import UsuarioSerializer, PacienteSerializer, AdministradorSerializer, MedicoSerializer, AgendaSerializer, CitaSerializer, NotificacionSerializer, HorarioSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth.hashers import make_password, check_password
 
 # Registro de paciente (cliente)
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def registrar_cliente(request):
     try:
-        serializer = PacienteSerializer(data=request.data)
+        data = request.data.copy()
+        # Hashea la contraseña antes de pasarla al serializer
+        if 'usuario' in data and 'password' in data['usuario']:
+            data['usuario']['password'] = make_password(data['usuario']['password'])
+        serializer = PacienteSerializer(data=data)
         if serializer.is_valid():
             serializer.save()
             return Response({
@@ -41,9 +46,9 @@ def login_cliente(request):
                 "error": "RUT y contraseña son requeridos"
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        paciente = Paciente.objects.get(rut=rut)
-        # Verificar contraseña del usuario relacionado
-        if paciente.usuario.password == password:  # Mejor usar hash en producción
+        paciente = Paciente.objects.get(usuario__rut=rut)
+        # Verificar contraseña usando hash
+        if check_password(password, paciente.usuario.password):
             serializer = PacienteSerializer(paciente)
             refresh = RefreshToken.for_user(paciente.usuario)
             return Response({
@@ -77,7 +82,8 @@ def login_medico_admin(request):
         usuario = Usuario.objects.get(rut=rut)
         if usuario.rol not in ['Medico', 'Administrador']:
             return Response({"error": "Solo médicos o administradores pueden iniciar sesión aquí."}, status=status.HTTP_403_FORBIDDEN)
-        if usuario.password == password:  # Mejor usar hash en producción
+        # Verificar contraseña usando hash
+        if check_password(password, usuario.password):
             serializer = UsuarioSerializer(usuario)
             refresh = RefreshToken.for_user(usuario)
             return Response({
