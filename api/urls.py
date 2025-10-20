@@ -6,7 +6,7 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView,
 )
 from .views import (
-    registrar_cliente, login, login_view, verificar_rut,
+    registrar_cliente, login, verificar_rut,
     UsuarioViewSet, PacienteViewSet, AdministradorViewSet,
     MedicoViewSet, CitaViewSet, NotificacionViewSet, HorarioViewSet,
     EspecialidadViewSet, MedicoEspecialidadViewSet, BoxViewSet
