@@ -21,9 +21,102 @@ from .serializers import (
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+def verificar_o_crear_rut(request):
+    """
+    Verifica si un RUT existe. Si no existe, crea un usuario temporal.
+    """
+    rut = request.data.get('rut')
+    
+    if not rut:
+        return Response(
+            {'error': 'El RUT es requerido'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        # ✅ Buscar usuario existente
+        usuario = Usuario.objects.get(rut=rut)
+        
+        # ✅ Obtener o crear paciente
+        try:
+            paciente = Paciente.objects.get(usuario=usuario)
+        except Paciente.DoesNotExist:
+            paciente = Paciente.objects.create(usuario=usuario)
+        
+        # ✅ Verificar si tiene datos completos
+        es_temporal = usuario.correo.endswith('@temporal.com')
+        
+        serializer = UsuarioSerializer(usuario)
+        return Response({
+            'existe': True,
+            'usuario': serializer.data,
+            'paciente_id': paciente.pk,  # ✅ Siempre devolver paciente_id
+            'es_temporal': es_temporal,
+            'mensaje': 'Usuario encontrado' if not es_temporal else 'Usuario temporal encontrado'
+        })
+    except Usuario.DoesNotExist:
+        # ✅ Crear usuario temporal
+        try:
+            nuevo_usuario = Usuario.objects.create(
+                rut=rut,
+                nombre=f"Usuario {rut}",
+                correo=f"{rut}@temporal.com",
+                password=make_password(rut),
+                rol='Paciente'
+            )
+            
+            # ✅ Crear paciente asociado
+            paciente = Paciente.objects.create(usuario=nuevo_usuario)
+            
+            serializer = UsuarioSerializer(nuevo_usuario)
+            return Response({
+                'existe': False,
+                'usuario': serializer.data,
+                'es_temporal': True,
+                'paciente_id': paciente.pk,  # ✅ Devolver paciente_id
+                'mensaje': 'Usuario temporal creado exitosamente'
+            }, status=status.HTTP_201_CREATED)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'error': f'Error al crear usuario temporal: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def registrar_cliente(request):
     try:
-        # recibimos datos tal cual vienen del frontend
+        rut = request.data.get('usuario', {}).get('rut')
+        
+        if not rut:
+            return Response({
+                "error": "El RUT es requerido"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        # ✅ Verificar si ya existe un usuario con ese RUT
+        try:
+            usuario_existente = Usuario.objects.get(rut=rut)
+            
+            # ✅ Verificar si tiene citas previas
+            tiene_citas = Cita.objects.filter(paciente__usuario=usuario_existente).exists()
+            
+            if tiene_citas:
+                return Response({
+                    "error": "rut_con_historial",
+                    "mensaje": "Este RUT ya tiene historial de citas en el sistema",
+                    "usuario_id": usuario_existente.id,
+                    "tiene_citas": True
+                }, status=status.HTTP_409_CONFLICT)
+            else:
+                # Si no tiene citas, simplemente actualizar los datos
+                return actualizar_usuario_existente(usuario_existente, request.data)
+        except Usuario.DoesNotExist:
+            # ✅ No existe, crear nuevo
+            pass
+        
+        # Crear nuevo usuario y paciente
         serializer = PacienteSerializer(data=request.data)
         if serializer.is_valid():
             paciente = serializer.save()
@@ -36,11 +129,104 @@ def registrar_cliente(request):
             "detalles": serializer.errors
         }, status=status.HTTP_400_BAD_REQUEST)
     except Exception as e:
-        # Añadir logging para depuración
         import traceback, sys
         traceback.print_exc(file=sys.stdout)
         return Response({
             "error": "Error interno del servidor",
+            "detalles": str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def actualizar_usuario_con_historial(request):
+    """
+    Actualiza un usuario temporal que tiene historial de citas
+    """
+    try:
+        usuario_id = request.data.get('usuario_id')
+        usuario_data = request.data.get('usuario', {})
+        
+        if not usuario_id:
+            return Response({
+                "error": "usuario_id es requerido"
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        usuario = Usuario.objects.get(id=usuario_id)
+        
+        # ✅ Actualizar datos del usuario
+        usuario.nombre = usuario_data.get('nombre', usuario.nombre)
+        usuario.correo = usuario_data.get('correo', usuario.correo)
+        usuario.telefono = usuario_data.get('telefono', usuario.telefono)
+        
+        if usuario_data.get('password'):
+            usuario.password = make_password(usuario_data['password'])
+        
+        usuario.save()
+        
+        # ✅ Actualizar datos del paciente si existe
+        try:
+            paciente = Paciente.objects.get(usuario=usuario)
+            if 'direccion' in request.data:
+                paciente.direccion = request.data['direccion']
+                paciente.save()
+        except Paciente.DoesNotExist:
+            # ✅ Crear paciente si no existe
+            paciente = Paciente.objects.create(
+                usuario=usuario,
+                direccion=request.data.get('direccion', '')
+            )
+        
+        serializer = PacienteSerializer(paciente)
+        return Response({
+            "mensaje": "Usuario actualizado exitosamente",
+            "user": serializer.data
+        }, status=status.HTTP_200_OK)
+    except Usuario.DoesNotExist:
+        return Response({
+            "error": "Usuario no encontrado"
+        }, status=status.HTTP_404_NOT_FOUND)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({
+            "error": "Error al actualizar usuario",
+            "detalles": str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+def actualizar_usuario_existente(usuario, data):
+    """Helper para actualizar usuario existente"""
+    try:
+        usuario_data = data.get('usuario', {})
+        
+        usuario.nombre = usuario_data.get('nombre', usuario.nombre)
+        usuario.correo = usuario_data.get('correo', usuario.correo)
+        usuario.telefono = usuario_data.get('telefono', usuario.telefono)
+        
+        if usuario_data.get('password'):
+            usuario.password = make_password(usuario_data['password'])
+        
+        usuario.save()
+        
+        # Actualizar paciente
+        try:
+            paciente = Paciente.objects.get(usuario=usuario)
+            if 'direccion' in data:
+                paciente.direccion = data['direccion']
+                paciente.save()
+        except Paciente.DoesNotExist:
+            paciente = Paciente.objects.create(
+                usuario=usuario,
+                direccion=data.get('direccion', '')
+            )
+        
+        serializer = PacienteSerializer(paciente)
+        return Response({
+            "mensaje": "Usuario actualizado exitosamente",
+            "user": serializer.data
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            "error": "Error al actualizar usuario",
             "detalles": str(e)
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

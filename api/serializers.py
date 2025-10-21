@@ -8,12 +8,29 @@ class UsuarioSerializer(serializers.ModelSerializer):
     class Meta:
         model = Usuario
         fields = ['id', 'nombre', 'correo', 'password', 'telefono', 'rut', 'rol']
-        extra_kwargs = {'password': {'write_only': True}}
+        extra_kwargs = {
+            'password': {'write_only': True, 'required': False},
+            'nombre': {'required': False},
+            'correo': {'required': False},
+            'rol': {'required': False}
+        }
 
     def create(self, validated_data):
+        # ✅ Permitir creación con solo RUT
+        if 'rol' not in validated_data:
+            validated_data['rol'] = 'Paciente'
+        if 'nombre' not in validated_data:
+            validated_data['nombre'] = f"Usuario {validated_data['rut']}"
+        if 'correo' not in validated_data:
+            validated_data['correo'] = f"{validated_data['rut']}@temporal.com"
+        
         pwd = validated_data.pop('password', None)
         if pwd:
             validated_data['password'] = make_password(pwd)
+        else:
+            # ✅ Generar password temporal basado en RUT
+            validated_data['password'] = make_password(validated_data['rut'])
+        
         return super().create(validated_data)
 
 class PacienteSerializer(serializers.ModelSerializer):
@@ -154,19 +171,9 @@ class CitaSerializer(serializers.ModelSerializer):
     especialidad_nombre = serializers.CharField(source='medico_especialidad.especialidad.nombre', read_only=True)
     box_nombre = serializers.SerializerMethodField(read_only=True)
     
-    usuario_id = serializers.IntegerField(write_only=True, required=False, allow_null=True)
-    
     class Meta:
         model = Cita
-        fields = ['id', 'paciente', 'usuario_id', 'paciente_nombre', 'medico', 'medico_nombre', 
-                  'medico_especialidad', 'especialidad_nombre', 'box_nombre', 
-                  'fechaHora', 'estado', 'prioridad', 'descripcion']
-        extra_kwargs = {
-            'paciente': {'required': False},
-            'medico': {'required': False},
-            'medico_especialidad': {'required': False},
-            'fechaHora': {'required': False}
-        }
+        fields = '__all__'
     
     def get_box_nombre(self, obj):
         """Derivar box desde Horario correspondiente"""
@@ -204,63 +211,13 @@ class CitaSerializer(serializers.ModelSerializer):
         
         return value
     
-    def to_internal_value(self, data):
-        """Convertir usuario_id a paciente ANTES de la validación de campos requeridos"""
-        data = data.copy() if hasattr(data, 'copy') else dict(data)
-        
-        usuario_id = data.get('usuario_id')
-        
-        if usuario_id and not data.get('paciente'):
-            try:
-                usuario = Usuario.objects.get(pk=usuario_id)
-                paciente, created = Paciente.objects.get_or_create(usuario=usuario)
-                if created:
-                    print(f"✅ Paciente creado automáticamente para Usuario {usuario.nombre} (ID: {usuario.id})")
-                else:
-                    print(f"ℹ️ Paciente ya existía para Usuario {usuario.nombre} (ID: {usuario.id})")
-                
-                data['paciente'] = paciente.pk
-                data.pop('usuario_id', None)
-            except Usuario.DoesNotExist:
-                raise serializers.ValidationError({"usuario_id": "Usuario no encontrado"})
-            except Exception as e:
-                print(f"❌ Error procesando usuario_id: {e}")
-                import traceback
-                traceback.print_exc()
-                raise serializers.ValidationError({"usuario_id": f"Error al procesar usuario: {str(e)}"})
-        
-        # ✅ Convertir fechaHora string a datetime con zona horaria de Chile
-        if 'fechaHora' in data and isinstance(data['fechaHora'], str):
-            try:
-                from datetime import datetime
-                import pytz
-                
-                # Parsear la fecha (puede venir como "2025-10-21T08:30:00" o "2025-10-21T08:30:00Z")
-                fecha_str = data['fechaHora'].rstrip('Z')  # Eliminar Z si existe
-                fecha_naive = datetime.fromisoformat(fecha_str)
-                
-                # Interpretar como hora de Chile (America/Santiago)
-                chile_tz = pytz.timezone('America/Santiago')
-                fecha_chile = chile_tz.localize(fecha_naive)
-                
-                # Convertir a UTC para guardar en la BD
-                fecha_utc = fecha_chile.astimezone(pytz.UTC)
-                
-                print(f"🔄 Conversión de fecha:")
-                print(f"   - Recibido: {data['fechaHora']}")
-                print(f"   - Interpretado como Chile: {fecha_chile}")
-                print(f"   - Convertido a UTC: {fecha_utc}")
-                
-                data['fechaHora'] = fecha_utc.isoformat()
-                
-            except Exception as e:
-                print(f"⚠️ Error convirtiendo fecha: {e}")
-                # Si hay error, dejar que Django lo maneje
-                pass
-        
-        return super().to_internal_value(data)
-    
     def validate(self, data):
+        # ✅ Validar que se proporcione paciente
+        if 'paciente' not in data or not data['paciente']:
+            raise serializers.ValidationError({
+                'paciente': 'El paciente es requerido'
+            })
+        
         # ✅ Solo validar si se está enviando fechaHora
         if 'fechaHora' not in data:
             # Si no se está actualizando la fecha, skip validaciones de horario
@@ -270,9 +227,6 @@ class CitaSerializer(serializers.ModelSerializer):
         me = data.get('medico_especialidad', self.instance.medico_especialidad if self.instance else None)
         fechaHora = data.get('fechaHora')
         paciente = data.get('paciente', self.instance.paciente if self.instance else None)
-        
-        if not paciente:
-            raise serializers.ValidationError({"paciente": "Debe proporcionar paciente o usuario_id"})
         
         # Validar que ME pertenece al médico
         if medico and me and me.medico_id != medico.pk:
