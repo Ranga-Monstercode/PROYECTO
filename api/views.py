@@ -376,25 +376,64 @@ class HorarioViewSet(viewsets.ModelViewSet):
 class CitaViewSet(viewsets.ModelViewSet):
     queryset = Cita.objects.all()
     serializer_class = CitaSerializer
-    permission_classes = [AllowAny]
-
+    
     def update(self, request, *args, **kwargs):
         """
-        Permite actualizar una cita existente
+        Actualización completa (PUT)
         """
-        partial = kwargs.pop('partial', False)
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        serializer.is_valid(raise_exception=True)
-        self.perform_update(serializer)
-        return Response(serializer.data)
-
+        try:
+            partial = kwargs.pop('partial', False)
+            instance = self.get_object()
+            
+            serializer = self.get_serializer(instance, data=request.data, partial=partial)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            
+            return Response(serializer.data)
+        except Exception as e:
+            print(f"❌ Error actualizando cita: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'detail': f'Error actualizando cita: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+    
     def partial_update(self, request, *args, **kwargs):
         """
-        Permite actualizar parcialmente una cita
+        Actualización parcial (PATCH) - solo actualiza los campos enviados
         """
         kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
+
+    @action(detail=True, methods=['patch'], url_path='actualizar-estado')
+    def actualizar_estado(self, request, pk=None):
+        """
+        Endpoint para actualizar estado, prioridad y descripción de una cita
+        """
+        try:
+            cita = self.get_object()
+            
+            # Actualizar campos permitidos
+            if 'estado' in request.data:
+                cita.estado = request.data['estado']
+            if 'prioridad' in request.data:
+                cita.prioridad = request.data['prioridad']
+            if 'descripcion' in request.data:
+                cita.descripcion = request.data['descripcion']
+            
+            cita.save()
+            
+            serializer = self.get_serializer(cita)
+            return Response(serializer.data)
+        except Exception as e:
+            print(f"❌ Error actualizando estado de cita: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'detail': f'Error: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
     @action(detail=False, methods=['post'])
     def horarios_disponibles(self, request):
@@ -650,52 +689,111 @@ class MedicoViewSet(viewsets.ModelViewSet):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
-    rut = (request.data.get('rut') or '').strip()     # <- usar tal cual
-    password = request.data.get('password') or ''
+    rut = request.data.get('rut')
+    password = request.data.get('password')
     
     if not rut or not password:
-        return Response({'error': 'RUT y contraseña son requeridos'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': 'RUT y contraseña requeridos'}, status=400)
     
     try:
-        # ❌ eliminar normalización; buscar exactamente por el valor recibido
         usuario = Usuario.objects.get(rut=rut)
-
-        if not check_password(password, usuario.password):
-            return Response({'error': 'Credenciales inválidas'}, status=status.HTTP_401_UNAUTHORIZED)
         
+        # Verificar contraseña
+        if not check_password(password, usuario.password):
+            return Response({'error': 'Contraseña incorrecta'}, status=401)
+        
+        # ✅ GENERAR TOKEN JWT VÁLIDO
+        refresh = RefreshToken.for_user(usuario)
+        access_token = str(refresh.access_token)
+        
+        print(f"✅ Token generado para {usuario.nombre}: {access_token[:30]}...")
+        
+        # Devolver respuesta
+        return Response({
+            'user': {
+                'id': usuario.id,
+                'nombre': usuario.nombre,
+                'correo': usuario.correo,
+                'rut': usuario.rut,
+                'telefono': usuario.telefono,
+                'rol': usuario.rol
+            },
+            'token': access_token,  # ✅ Token JWT válido
+            'message': f'Bienvenido, {usuario.nombre}'
+        })
+        
+    except Usuario.DoesNotExist:
+        return Response({'error': 'Usuario no encontrado'}, status=404)
+    except Exception as e:
+        print(f"❌ Error en login: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return Response({'error': 'Error interno del servidor'}, status=500)
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import authenticate
+from .models import Usuario
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def login_view(request):
+    """
+    Login endpoint que devuelve token JWT
+    """
+    correo = request.data.get('correo')
+    password = request.data.get('password')
+    
+    if not correo or not password:
+        return Response(
+            {'detail': 'Correo y contraseña son requeridos'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    try:
+        # Buscar usuario por correo
+        usuario = Usuario.objects.get(correo=correo)
+        
+        # Verificar contraseña
+        if not usuario.check_password(password):
+            return Response(
+                {'detail': 'Credenciales inválidas'}, 
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Generar tokens JWT
+        refresh = RefreshToken.for_user(usuario)
+        access_token = str(refresh.access_token)
+        refresh_token = str(refresh)
+        
+        # Preparar datos del usuario
         user_data = {
             'id': usuario.id,
             'nombre': usuario.nombre,
             'correo': usuario.correo,
             'rut': usuario.rut,
             'telefono': usuario.telefono,
-            'rol': usuario.rol,
+            'rol': usuario.rol
         }
-        if usuario.rol == 'Paciente':
-            paciente, created = Paciente.objects.get_or_create(usuario=usuario)
-            user_data['paciente_id'] = paciente.pk
-        elif usuario.rol == 'Medico':
-            try:
-                medico = Medico.objects.get(usuario=usuario)
-                user_data['medico_id'] = medico.pk
-            except Medico.DoesNotExist:
-                pass
-        elif usuario.rol == 'Administrador':
-            try:
-                admin = Administrador.objects.get(usuario=usuario)
-                user_data['admin_id'] = admin.pk
-            except Administrador.DoesNotExist:
-                pass
-
+        
+        # Devolver respuesta con token
         return Response({
-            'user': user_data,
-            'token': str(RefreshToken.for_user(usuario).access_token),
-            'message': 'Login exitoso'
+            'access': access_token,
+            'refresh': refresh_token,
+            'user': user_data
         }, status=status.HTTP_200_OK)
         
     except Usuario.DoesNotExist:
-        return Response({'error': 'Credenciales inválidas'}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response(
+            {'detail': 'Credenciales inválidas'}, 
+            status=status.HTTP_401_UNAUTHORIZED
+        )
     except Exception as e:
-        print(f"❌ Error en login: {str(e)}")
-        return Response({'error': 'Error interno del servidor'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response(
+            {'detail': str(e)}, 
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 

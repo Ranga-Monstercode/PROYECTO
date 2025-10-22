@@ -1,19 +1,58 @@
 from django.core.exceptions import ValidationError
 from django.db import models
 from datetime import timedelta
+from django.contrib.auth.hashers import make_password, check_password
 
 class Usuario(models.Model):
-    ROLES = (
-        ('Paciente', 'Paciente'),
+    ROLES = [
         ('Administrador', 'Administrador'),
         ('Medico', 'Medico'),
-    )
-    nombre = models.CharField(max_length=100)
+        ('Paciente', 'Paciente'),
+    ]
+    
+    nombre = models.CharField(max_length=255)
     correo = models.EmailField(unique=True)
     password = models.CharField(max_length=255)
-    telefono = models.CharField(max_length=20, blank=True, null=True)
     rut = models.CharField(max_length=12, unique=True)
+    telefono = models.CharField(max_length=15, blank=True, null=True)
     rol = models.CharField(max_length=20, choices=ROLES)
+    fecha_registro = models.DateTimeField(auto_now_add=True)
+
+    # Campos requeridos para JWT
+    USERNAME_FIELD = 'correo'
+    REQUIRED_FIELDS = ['nombre', 'rut']
+    
+    # ✅ Propiedades requeridas para JWT
+    @property
+    def is_active(self):
+        return True
+    
+    @property
+    def is_anonymous(self):
+        return False
+    
+    @property
+    def is_authenticated(self):
+        return True
+    
+    # ✅ Para que JWT pueda obtener el username
+    def get_username(self):
+        return self.correo
+    
+    # ✅ Métodos de contraseña
+    def set_password(self, raw_password):
+        """Encripta la contraseña"""
+        self.password = make_password(raw_password)
+    
+    def check_password(self, raw_password):
+        """Verifica la contraseña"""
+        return check_password(raw_password, self.password)
+
+    def __str__(self):
+        return f"{self.nombre} ({self.rol})"
+
+    class Meta:
+        db_table = 'usuarios'
 
 class Paciente(models.Model):
     usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, primary_key=True)
@@ -141,6 +180,20 @@ class Cita(models.Model):
         ordering = ['fechaHora']
 
     def clean(self):
+        """
+        ✅ Solo validar si fechaHora está siendo modificada
+        """
+        # Si la instancia ya existe y fechaHora no cambió, skip validaciones
+        if self.pk:
+            try:
+                old_instance = Cita.objects.get(pk=self.pk)
+                # Si la fecha no cambió, no validar horario
+                if old_instance.fechaHora == self.fechaHora:
+                    return
+            except Cita.DoesNotExist:
+                pass
+        
+        # Validaciones de horario solo si fechaHora es nueva o cambió
         if self.fechaHora.minute not in [0, 15, 30, 45]:
             raise ValidationError("Las citas solo pueden agendarse en intervalos de 15 minutos")
         if self.fechaHora.hour < 8 or self.fechaHora.hour >= 20:
@@ -197,7 +250,12 @@ class Cita(models.Model):
             pass
 
     def save(self, *args, **kwargs):
-        self.full_clean()
+        # ✅ Permitir skip de validación para actualizaciones parciales
+        skip_validation = kwargs.pop('skip_validation', False)
+        
+        if not skip_validation:
+            self.full_clean()
+        
         super().save(*args, **kwargs)
 
 class Notificacion(models.Model):

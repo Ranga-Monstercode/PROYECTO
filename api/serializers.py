@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from datetime import datetime, timedelta
@@ -69,15 +70,37 @@ class EspecialidadSerializer(serializers.ModelSerializer):
 class MedicoSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(source='pk', read_only=True)
     usuario = UsuarioSerializer()
+    
     class Meta:
         model = Medico
         fields = ['id', 'usuario']
+    
     def create(self, validated_data):
-        usuario_data = validated_data.pop('usuario')
-        usuario = UsuarioSerializer(data=usuario_data)
-        usuario.is_valid(raise_exception=True)
-        u = usuario.save()
-        return Medico.objects.create(usuario=u, **validated_data)
+        try:
+            usuario_data = validated_data.pop('usuario')
+            
+            # ✅ Validar que el rol sea 'Medico'
+            if 'rol' not in usuario_data:
+                usuario_data['rol'] = 'Medico'
+            elif usuario_data['rol'] != 'Medico':
+                raise serializers.ValidationError({
+                    'usuario': {'rol': 'El rol debe ser "Medico"'}
+                })
+            
+            # ✅ Crear usuario
+            usuario_serializer = UsuarioSerializer(data=usuario_data)
+            usuario_serializer.is_valid(raise_exception=True)
+            usuario = usuario_serializer.save()
+            
+            # ✅ Crear médico
+            medico = Medico.objects.create(usuario=usuario, **validated_data)
+            return medico
+        except Exception as e:
+            print(f"❌ Error creando médico: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+    
     def update(self, instance, validated_data):
         usuario_data = validated_data.pop('usuario', None)
         if usuario_data:
@@ -169,12 +192,37 @@ class CitaSerializer(serializers.ModelSerializer):
     paciente_nombre = serializers.CharField(source='paciente.usuario.nombre', read_only=True)
     medico_nombre = serializers.CharField(source='medico.usuario.nombre', read_only=True)
     especialidad_nombre = serializers.CharField(source='medico_especialidad.especialidad.nombre', read_only=True)
-    box_nombre = serializers.SerializerMethodField(read_only=True)
+    box_nombre = serializers.SerializerMethodField()
     
     class Meta:
         model = Cita
         fields = '__all__'
+        extra_kwargs = {
+            'paciente': {'required': False},
+            'medico': {'required': False},
+            'medico_especialidad': {'required': False},
+            'fechaHora': {'required': False},
+        }
     
+    def update(self, instance, validated_data):
+        """
+        Actualización que solo modifica los campos enviados SIN validar el modelo completo
+        """
+        try:
+            # ✅ Solo actualizar los campos que vienen en validated_data
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            
+            # ✅ Guardar sin llamar a full_clean() para actualizaciones parciales
+            instance.save(skip_validation=True) if 'fechaHora' not in validated_data else instance.save()
+            
+            return instance
+        except Exception as e:
+            print(f"❌ Error en serializer update: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            raise
+
     def get_box_nombre(self, obj):
         """Derivar box desde Horario correspondiente"""
         try:
@@ -182,7 +230,6 @@ class CitaSerializer(serializers.ModelSerializer):
             if not me:
                 return None
             dias = ['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado','Domingo']
-            # ✅ Convertir a hora local de Chile antes de buscar
             from django.utils import timezone
             import pytz
             chile_tz = pytz.timezone('America/Santiago')
@@ -203,6 +250,13 @@ class CitaSerializer(serializers.ModelSerializer):
             return None
 
     def validate_fechaHora(self, value):
+        """
+        ✅ Solo validar si se está creando o si se está modificando fechaHora
+        """
+        # Si estamos actualizando y fechaHora no cambió, skip validación
+        if self.instance and self.instance.fechaHora == value:
+            return value
+            
         if value.minute not in [0, 15, 30, 45]:
             raise serializers.ValidationError("Las citas solo pueden agendarse en intervalos de 15 minutos")
         
@@ -212,21 +266,27 @@ class CitaSerializer(serializers.ModelSerializer):
         return value
     
     def validate(self, data):
-        # ✅ Validar que se proporcione paciente
-        if 'paciente' not in data or not data['paciente']:
+        # ✅ SOLO validar si estamos CREANDO o si se está enviando fechaHora
+        is_creating = not self.instance
+        is_updating_fecha = 'fechaHora' in data
+        
+        # Solo validar paciente en creación
+        if is_creating and 'paciente' not in data:
             raise serializers.ValidationError({
                 'paciente': 'El paciente es requerido'
             })
         
-        # ✅ Solo validar si se está enviando fechaHora
-        if 'fechaHora' not in data:
-            # Si no se está actualizando la fecha, skip validaciones de horario
+        # ✅ Solo validar horario si estamos creando o modificando la fecha
+        if not is_creating and not is_updating_fecha:
+            # Es actualización parcial (estado, prioridad, etc.) - skip validaciones de horario
             return data
             
         medico = data.get('medico', self.instance.medico if self.instance else None)
         me = data.get('medico_especialidad', self.instance.medico_especialidad if self.instance else None)
-        fechaHora = data.get('fechaHora')
-        paciente = data.get('paciente', self.instance.paciente if self.instance else None)
+        fechaHora = data.get('fechaHora', self.instance.fechaHora if self.instance else None)
+        
+        if not fechaHora:
+            return data
         
         # Validar que ME pertenece al médico
         if medico and me and me.medico_id != medico.pk:
@@ -234,29 +294,18 @@ class CitaSerializer(serializers.ModelSerializer):
                 {"medico_especialidad": "La especialidad seleccionada no pertenece al médico"}
             )
         
-        # ✅ Validar horario usando hora local de Chile
+        # Validar horario usando hora local de Chile
         if me and fechaHora:
-            # Convertir fechaHora a zona horaria de Chile
             import pytz
             chile_tz = pytz.timezone('America/Santiago')
             
-            # Si fechaHora es naive (sin timezone), asumimos que es UTC
             if timezone.is_naive(fechaHora):
                 fechaHora = timezone.make_aware(fechaHora, timezone.utc)
             
-            # Convertir a hora de Chile
             fecha_chile = fechaHora.astimezone(chile_tz)
-            
             dias = ['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado','Domingo']
             dia_nombre = dias[fecha_chile.weekday()]
             t = fecha_chile.time()
-            
-            print(f"🔍 Validando horario:")
-            print(f"   - fechaHora UTC: {fechaHora}")
-            print(f"   - fechaHora Chile: {fecha_chile}")
-            print(f"   - Día: {dia_nombre}")
-            print(f"   - Hora: {t}")
-            print(f"   - Medico-Especialidad ID: {me.id}")
             
             horarios_disponibles = Horario.objects.filter(
                 medico_especialidad=me, 
@@ -265,18 +314,7 @@ class CitaSerializer(serializers.ModelSerializer):
                 horaFin__gt=t
             )
             
-            print(f"   - Horarios encontrados: {horarios_disponibles.count()}")
-            for h in horarios_disponibles:
-                print(f"     * {h.dia} {h.horaInicio}-{h.horaFin} Box:{h.box.nombre if h.box else 'Sin box'}")
-            
             if not horarios_disponibles.exists():
-                # Mostrar todos los horarios configurados para este ME
-                todos_horarios = Horario.objects.filter(medico_especialidad=me)
-                print(f"❌ No hay horarios para {dia_nombre} a las {t}")
-                print(f"   Horarios configurados para este médico-especialidad:")
-                for h in todos_horarios:
-                    print(f"     * {h.dia} {h.horaInicio}-{h.horaFin}")
-                
                 raise serializers.ValidationError(
                     {"fechaHora": f"El médico no tiene disponibilidad configurada para {dia_nombre} a las {t.strftime('%H:%M')}"}
                 )

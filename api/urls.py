@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import (
     TokenVerifyView,
 )
 from .views import (
+    login_view,
     registrar_cliente, login, verificar_rut, verificar_o_crear_rut, actualizar_usuario_con_historial,
     UsuarioViewSet, PacienteViewSet, AdministradorViewSet,
     MedicoViewSet, CitaViewSet, NotificacionViewSet, HorarioViewSet,
@@ -27,6 +28,7 @@ router.register(r'boxes', BoxViewSet)
 urlpatterns = [
     path('registrar/', registrar_cliente, name='registrar'),
     path('login/', login, name='login'),
+    path('login-view/', login_view, name='login-view'),
     path('verificar-rut/', verificar_rut, name='verificar-rut'),
     path('verificar-o-crear-rut/', verificar_o_crear_rut, name='verificar-o-crear-rut'),
     path('actualizar-usuario-historial/', actualizar_usuario_con_historial, name='actualizar-usuario-historial'),
