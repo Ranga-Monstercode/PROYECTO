@@ -142,36 +142,36 @@ WSGI_APPLICATION = 'gestioncitas.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.mysql',
-#         'NAME': config('DB_NAME', default='gestioncitasmedicas'),
-#         'USER': config('DB_USER', default='admin'),
-#         'PASSWORD': config('DB_PASSWORD', default='gestioncitasdb2025'),
-#         'HOST': config('DB_HOST', default='dbpruebas.c12240wame58.us-east-1.rds.amazonaws.com'),
-#         'PORT': config('DB_PORT', default='3306'),
-#         'OPTIONS': {
-# #             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-# #             'charset': 'utf8mb4',
-# #         },
-# #     }
-# # }
-
-
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'citas',
-        'USER': 'root',
-        'PASSWORD': 'root',
-        'HOST': 'localhost',
-        'PORT': '3306',
+        'NAME': config('DB_NAME', default='gestioncitasmedicas'),
+        'USER': config('DB_USER', default='admin'),
+        'PASSWORD': config('DB_PASSWORD', default='gestioncitasdb2025'),
+        'HOST': config('DB_HOST', default='dbpruebas.c12240wame58.us-east-1.rds.amazonaws.com'),
+        'PORT': config('DB_PORT', default='3306'),
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
             'charset': 'utf8mb4',
         },
     }
 }
+
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.mysql',
+#         'NAME': 'citas',
+#         'USER': 'root',
+#         'PASSWORD': 'root',
+#         'HOST': 'localhost',
+#         'PORT': '3306',
+#         'OPTIONS': {
+#             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+#             'charset': 'utf8mb4',
+#         },
+#     }
+# }
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
