@@ -17,7 +17,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        # ✅ Permitir creación con solo RUT
+        #  Permitir creación con solo RUT
         if 'rol' not in validated_data:
             validated_data['rol'] = 'Paciente'
         if 'nombre' not in validated_data:
@@ -29,7 +29,7 @@ class UsuarioSerializer(serializers.ModelSerializer):
         if pwd:
             validated_data['password'] = make_password(pwd)
         else:
-            # ✅ Generar password temporal basado en RUT
+            #  Generar password temporal basado en RUT
             validated_data['password'] = make_password(validated_data['rut'])
         
         return super().create(validated_data)
@@ -68,18 +68,26 @@ class EspecialidadSerializer(serializers.ModelSerializer):
         fields = ['id', 'nombre', 'descripcion']
 
 class MedicoSerializer(serializers.ModelSerializer):
-    id = serializers.IntegerField(source='pk', read_only=True)
+    id = serializers.IntegerField(source='pk', read_only=True)  #  ID del médico (primary key)
     usuario = UsuarioSerializer()
     
     class Meta:
         model = Medico
         fields = ['id', 'usuario']
     
+    def to_representation(self, instance):
+        """
+        Asegurar que siempre devuelve el ID del médico correctamente
+        """
+        representation = super().to_representation(instance)
+        representation['id'] = instance.pk  #  ID del médico
+        return representation
+    
     def create(self, validated_data):
         try:
             usuario_data = validated_data.pop('usuario')
             
-            # ✅ Validar que el rol sea 'Medico'
+            #  Validar que el rol sea 'Medico'
             if 'rol' not in usuario_data:
                 usuario_data['rol'] = 'Medico'
             elif usuario_data['rol'] != 'Medico':
@@ -87,16 +95,16 @@ class MedicoSerializer(serializers.ModelSerializer):
                     'usuario': {'rol': 'El rol debe ser "Medico"'}
                 })
             
-            # ✅ Crear usuario
+            #  Crear usuario
             usuario_serializer = UsuarioSerializer(data=usuario_data)
             usuario_serializer.is_valid(raise_exception=True)
             usuario = usuario_serializer.save()
             
-            # ✅ Crear médico
+            #  Crear médico
             medico = Medico.objects.create(usuario=usuario, **validated_data)
             return medico
         except Exception as e:
-            print(f"❌ Error creando médico: {str(e)}")
+            print(f" Error creando médico: {str(e)}")
             import traceback
             traceback.print_exc()
             raise
@@ -209,16 +217,16 @@ class CitaSerializer(serializers.ModelSerializer):
         Actualización que solo modifica los campos enviados SIN validar el modelo completo
         """
         try:
-            # ✅ Solo actualizar los campos que vienen en validated_data
+            #  Solo actualizar los campos que vienen en validated_data
             for attr, value in validated_data.items():
                 setattr(instance, attr, value)
             
-            # ✅ Guardar sin llamar a full_clean() para actualizaciones parciales
+            #  Guardar sin llamar a full_clean() para actualizaciones parciales
             instance.save(skip_validation=True) if 'fechaHora' not in validated_data else instance.save()
             
             return instance
         except Exception as e:
-            print(f"❌ Error en serializer update: {str(e)}")
+            print(f" Error en serializer update: {str(e)}")
             import traceback
             traceback.print_exc()
             raise
@@ -246,12 +254,12 @@ class CitaSerializer(serializers.ModelSerializer):
             
             return h.box.nombre if (h and h.box) else None
         except Exception as e:
-            print(f"❌ Error obteniendo box_nombre: {e}")
+            print(f" Error obteniendo box_nombre: {e}")
             return None
 
     def validate_fechaHora(self, value):
         """
-        ✅ Solo validar si se está creando o si se está modificando fechaHora
+         Solo validar si se está creando o si se está modificando fechaHora
         """
         # Si estamos actualizando y fechaHora no cambió, skip validación
         if self.instance and self.instance.fechaHora == value:
@@ -266,7 +274,7 @@ class CitaSerializer(serializers.ModelSerializer):
         return value
     
     def validate(self, data):
-        # ✅ SOLO validar si estamos CREANDO o si se está enviando fechaHora
+        #  SOLO validar si estamos CREANDO o si se está enviando fechaHora
         is_creating = not self.instance
         is_updating_fecha = 'fechaHora' in data
         
@@ -276,7 +284,7 @@ class CitaSerializer(serializers.ModelSerializer):
                 'paciente': 'El paciente es requerido'
             })
         
-        # ✅ Solo validar horario si estamos creando o modificando la fecha
+        #  Solo validar horario si estamos creando o modificando la fecha
         if not is_creating and not is_updating_fecha:
             # Es actualización parcial (estado, prioridad, etc.) - skip validaciones de horario
             return data

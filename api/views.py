@@ -2,7 +2,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from django.contrib.auth.hashers import make_password, check_password  # ✅ Agregar check_password
+from django.contrib.auth.hashers import make_password, check_password  #  Agregar check_password
 from django.utils import timezone
 from datetime import datetime, timedelta
 import pytz
@@ -34,28 +34,28 @@ def verificar_o_crear_rut(request):
         )
     
     try:
-        # ✅ Buscar usuario existente
+        #  Buscar usuario existente
         usuario = Usuario.objects.get(rut=rut)
         
-        # ✅ Obtener o crear paciente
+        #  Obtener o crear paciente
         try:
             paciente = Paciente.objects.get(usuario=usuario)
         except Paciente.DoesNotExist:
             paciente = Paciente.objects.create(usuario=usuario)
         
-        # ✅ Verificar si tiene datos completos
+        #  Verificar si tiene datos completos
         es_temporal = usuario.correo.endswith('@temporal.com')
         
         serializer = UsuarioSerializer(usuario)
         return Response({
             'existe': True,
             'usuario': serializer.data,
-            'paciente_id': paciente.pk,  # ✅ Siempre devolver paciente_id
+            'paciente_id': paciente.pk,  #  Siempre devolver paciente_id
             'es_temporal': es_temporal,
             'mensaje': 'Usuario encontrado' if not es_temporal else 'Usuario temporal encontrado'
         })
     except Usuario.DoesNotExist:
-        # ✅ Crear usuario temporal
+        #  Crear usuario temporal
         try:
             nuevo_usuario = Usuario.objects.create(
                 rut=rut,
@@ -65,7 +65,7 @@ def verificar_o_crear_rut(request):
                 rol='Paciente'
             )
             
-            # ✅ Crear paciente asociado
+            #  Crear paciente asociado
             paciente = Paciente.objects.create(usuario=nuevo_usuario)
             
             serializer = UsuarioSerializer(nuevo_usuario)
@@ -73,7 +73,7 @@ def verificar_o_crear_rut(request):
                 'existe': False,
                 'usuario': serializer.data,
                 'es_temporal': True,
-                'paciente_id': paciente.pk,  # ✅ Devolver paciente_id
+                'paciente_id': paciente.pk,  #  Devolver paciente_id
                 'mensaje': 'Usuario temporal creado exitosamente'
             }, status=status.HTTP_201_CREATED)
         except Exception as e:
@@ -95,11 +95,11 @@ def registrar_cliente(request):
                 "error": "El RUT es requerido"
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # ✅ Verificar si ya existe un usuario con ese RUT
+        #  Verificar si ya existe un usuario con ese RUT
         try:
             usuario_existente = Usuario.objects.get(rut=rut)
             
-            # ✅ Verificar si tiene citas previas
+            #  Verificar si tiene citas previas
             tiene_citas = Cita.objects.filter(paciente__usuario=usuario_existente).exists()
             
             if tiene_citas:
@@ -113,7 +113,7 @@ def registrar_cliente(request):
                 # Si no tiene citas, simplemente actualizar los datos
                 return actualizar_usuario_existente(usuario_existente, request.data)
         except Usuario.DoesNotExist:
-            # ✅ No existe, crear nuevo
+            #  No existe, crear nuevo
             pass
         
         # Crear nuevo usuario y paciente
@@ -153,7 +153,7 @@ def actualizar_usuario_con_historial(request):
         
         usuario = Usuario.objects.get(id=usuario_id)
         
-        # ✅ Actualizar datos del usuario
+        #  Actualizar datos del usuario
         usuario.nombre = usuario_data.get('nombre', usuario.nombre)
         usuario.correo = usuario_data.get('correo', usuario.correo)
         usuario.telefono = usuario_data.get('telefono', usuario.telefono)
@@ -163,14 +163,14 @@ def actualizar_usuario_con_historial(request):
         
         usuario.save()
         
-        # ✅ Actualizar datos del paciente si existe
+        #  Actualizar datos del paciente si existe
         try:
             paciente = Paciente.objects.get(usuario=usuario)
             if 'direccion' in request.data:
                 paciente.direccion = request.data['direccion']
                 paciente.save()
         except Paciente.DoesNotExist:
-            # ✅ Crear paciente si no existe
+            #  Crear paciente si no existe
             paciente = Paciente.objects.create(
                 usuario=usuario,
                 direccion=request.data.get('direccion', '')
@@ -391,7 +391,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             
             return Response(serializer.data)
         except Exception as e:
-            print(f"❌ Error actualizando cita: {str(e)}")
+            print(f" Error actualizando cita: {str(e)}")
             import traceback
             traceback.print_exc()
             return Response(
@@ -427,7 +427,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             serializer = self.get_serializer(cita)
             return Response(serializer.data)
         except Exception as e:
-            print(f"❌ Error actualizando estado de cita: {str(e)}")
+            print(f" Error actualizando estado de cita: {str(e)}")
             import traceback
             traceback.print_exc()
             return Response(
@@ -477,10 +477,10 @@ class CitaViewSet(viewsets.ModelViewSet):
                     "mensaje": "No hay horarios configurados para este día"
                 })
             
-            # ✅ Usar timezone de Chile
+            #  Usar timezone de Chile
             chile_tz = pytz.timezone('America/Santiago')
             
-            # ✅ Calcular rango de fecha en UTC para la consulta
+            #  Calcular rango de fecha en UTC para la consulta
             inicio_dia_chile = chile_tz.localize(datetime.combine(fecha, time.min))
             fin_dia_chile = chile_tz.localize(datetime.combine(fecha, time.max))
             
@@ -489,7 +489,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             
             print(f"🔍 Buscando citas entre {inicio_dia_utc} y {fin_dia_utc}")
             
-            # ✅ PRIMERO: Obtener todas las citas ocupadas en UTC
+            #  PRIMERO: Obtener todas las citas ocupadas en UTC
             citas = Cita.objects.filter(
                 medico=medico,
                 fechaHora__gte=inicio_dia_utc,
@@ -499,7 +499,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             
             print(f"📋 Citas encontradas: {citas.count()}")
             
-            # ✅ Crear set de rangos ocupados (inicio y fin de cada cita)
+            #  Crear set de rangos ocupados (inicio y fin de cada cita)
             rangos_ocupados = []
             for c in citas:
                 fecha_utc = c.fechaHora
@@ -522,7 +522,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             
             print(f"🚫 Total rangos ocupados: {len(rangos_ocupados)}")
             
-            # ✅ SEGUNDO: Generar todos los slots posibles en UTC (cada 15 min)
+            #  SEGUNDO: Generar todos los slots posibles en UTC (cada 15 min)
             slots_totales = []
             for h in horarios:
                 inicio = h.horaInicio
@@ -557,7 +557,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             
             print(f"📊 Total slots generados: {len(slots_totales)}")
             
-            # ✅ TERCERO: Filtrar slots que NO se solapen con citas existentes
+            #  TERCERO: Filtrar slots que NO se solapen con citas existentes
             def hay_solapamiento(slot_inicio, slot_fin, rangos):
                 """
                 Verifica si un slot se solapa con algún rango ocupado
@@ -586,7 +586,7 @@ class CitaViewSet(viewsets.ModelViewSet):
                 else:
                     print(f"⛔ Descartando slot: {slot['horaInicio']}-{slot['horaFin']} (solapamiento detectado)")
             
-            print(f"✅ Slots disponibles finales: {len(slots_disponibles)}")
+            print(f" Slots disponibles finales: {len(slots_disponibles)}")
             
             return Response({
                 "disponibles": slots_disponibles,
@@ -676,6 +676,35 @@ class MedicoViewSet(viewsets.ModelViewSet):
     serializer_class = MedicoSerializer
     permission_classes = [AllowAny]
 
+    def destroy(self, request, *args, **kwargs):
+        """
+        Eliminar médico y su usuario asociado
+        """
+        try:
+            instance = self.get_object()
+            usuario = instance.usuario
+            
+            # Eliminar el médico (esto eliminará en cascada por OneToOneField)
+            instance.delete()
+            
+            # Eliminar el usuario asociado
+            usuario.delete()
+            
+            print(f" Médico y usuario eliminados correctamente")
+            
+            return Response(
+                {'message': 'Médico eliminado correctamente'}, 
+                status=status.HTTP_204_NO_CONTENT
+            )
+        except Exception as e:
+            print(f" Error eliminando médico: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'detail': f'Error eliminando médico: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
     @action(detail=True, methods=['get'])
     def horarios(self, request, pk=None):
         """
@@ -702,11 +731,11 @@ def login(request):
         if not check_password(password, usuario.password):
             return Response({'error': 'Contraseña incorrecta'}, status=401)
         
-        # ✅ GENERAR TOKEN JWT VÁLIDO
+        #  GENERAR TOKEN JWT VÁLIDO
         refresh = RefreshToken.for_user(usuario)
         access_token = str(refresh.access_token)
         
-        print(f"✅ Token generado para {usuario.nombre}: {access_token[:30]}...")
+        print(f" Token generado para {usuario.nombre}: {access_token[:30]}...")
         
         # Devolver respuesta
         return Response({
@@ -718,14 +747,14 @@ def login(request):
                 'telefono': usuario.telefono,
                 'rol': usuario.rol
             },
-            'token': access_token,  # ✅ Token JWT válido
+            'token': access_token,  #  Token JWT válido
             'message': f'Bienvenido, {usuario.nombre}'
         })
         
     except Usuario.DoesNotExist:
         return Response({'error': 'Usuario no encontrado'}, status=404)
     except Exception as e:
-        print(f"❌ Error en login: {str(e)}")
+        print(f" Error en login: {str(e)}")
         import traceback
         traceback.print_exc()
         return Response({'error': 'Error interno del servidor'}, status=500)
