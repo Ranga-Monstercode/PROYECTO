@@ -99,8 +99,8 @@ def registrar_cliente(request):
         try:
             usuario_existente = Usuario.objects.get(rut=rut)
             
-            #  Verificar si tiene citas previas
-            tiene_citas = Cita.objects.filter(paciente__usuario=usuario_existente).exists()
+            # Verificar si tiene citas previas
+            tiene_citas = Cita.objects.filter(usuario=usuario_existente).exists()
             
             if tiene_citas:
                 return Response({
@@ -432,6 +432,151 @@ class CitaViewSet(viewsets.ModelViewSet):
             traceback.print_exc()
             return Response(
                 {'detail': f'Error: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=True, methods=['patch'], url_path='reprogramar')
+    def reprogramar(self, request, pk=None):
+        """
+        Endpoint para reprogramar una cita (cambiar fecha/hora y marcar como Reprogramada)
+        """
+        try:
+            cita = self.get_object()
+            
+            # Validar que la cita pueda ser reprogramada
+            if cita.estado == 'Cancelada':
+                return Response(
+                    {'detail': 'No se puede reprogramar una cita cancelada'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            nueva_fecha_hora = request.data.get('fechaHora')
+            if not nueva_fecha_hora:
+                return Response(
+                    {'detail': 'La nueva fecha y hora son requeridas'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Parsear la nueva fecha
+            try:
+                from datetime import datetime
+                if isinstance(nueva_fecha_hora, str):
+                    nueva_fecha = datetime.fromisoformat(nueva_fecha_hora.replace('Z', '+00:00'))
+                else:
+                    nueva_fecha = nueva_fecha_hora
+            except (ValueError, AttributeError) as e:
+                return Response(
+                    {'detail': f'Formato de fecha inválido: {str(e)}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validar que la nueva fecha sea futura
+            from django.utils import timezone
+            if nueva_fecha <= timezone.now():
+                return Response(
+                    {'detail': 'La nueva fecha debe ser futura'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validar intervalo de 15 minutos
+            if nueva_fecha.minute not in [0, 15, 30, 45]:
+                return Response(
+                    {'detail': 'La hora debe ser en intervalos de 15 minutos'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validar rango horario (8:00 - 20:00)
+            import pytz
+            chile_tz = pytz.timezone('America/Santiago')
+            if timezone.is_naive(nueva_fecha):
+                nueva_fecha = timezone.make_aware(nueva_fecha, timezone.utc)
+            fecha_chile = nueva_fecha.astimezone(chile_tz)
+            
+            if fecha_chile.hour < 8 or fecha_chile.hour >= 20:
+                return Response(
+                    {'detail': 'La cita debe estar entre 8:00 AM y 8:00 PM'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validar que el médico tenga horario configurado
+            dias = ['Lunes','Martes','Miercoles','Jueves','Viernes','Sabado','Domingo']
+            dia_nombre = dias[fecha_chile.weekday()]
+            hora_chile = fecha_chile.time()
+            
+            horario_disponible = Horario.objects.filter(
+                medico_especialidad=cita.medico_especialidad,
+                dia=dia_nombre,
+                horaInicio__lte=hora_chile,
+                horaFin__gt=hora_chile
+            ).exists()
+            
+            if not horario_disponible:
+                return Response(
+                    {'detail': f'El médico no tiene disponibilidad configurada para {dia_nombre} a las {hora_chile.strftime("%H:%M")}'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validar que no haya conflicto con otras citas
+            conflictos = Cita.objects.filter(
+                medico=cita.medico,
+                fechaHora=nueva_fecha,
+                estado__in=['Pendiente', 'Confirmada', 'Reprogramada']
+            ).exclude(pk=cita.pk)
+            
+            if conflictos.exists():
+                return Response(
+                    {'detail': 'Ya existe una cita en este horario para el médico'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            
+            # Validar conflicto en mismo box
+            h = Horario.objects.filter(
+                medico_especialidad=cita.medico_especialidad,
+                dia=dia_nombre,
+                horaInicio__lte=hora_chile,
+                horaFin__gt=hora_chile
+            ).select_related('box').first()
+            
+            if h and h.box_id:
+                otras_citas = Cita.objects.filter(
+                    medico=cita.medico,
+                    fechaHora=nueva_fecha,
+                    estado__in=['Pendiente', 'Confirmada', 'Reprogramada']
+                ).exclude(pk=cita.pk)
+                
+                for otra in otras_citas:
+                    otra_fecha_chile = otra.fechaHora.astimezone(chile_tz)
+                    dia2 = dias[otra_fecha_chile.weekday()]
+                    hora2 = otra_fecha_chile.time()
+                    h2 = Horario.objects.filter(
+                        medico_especialidad=otra.medico_especialidad,
+                        dia=dia2,
+                        horaInicio__lte=hora2,
+                        horaFin__gt=hora2
+                    ).first()
+                    if h2 and h2.box_id == h.box_id:
+                        return Response(
+                            {'detail': 'Ya existe una cita en este box a esta hora'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+            
+            # Actualizar la cita
+            cita.fechaHora = nueva_fecha
+            cita.estado = 'Reprogramada'
+            cita.save(skip_validation=True)
+            
+            serializer = self.get_serializer(cita)
+            return Response({
+                'detail': 'Cita reprogramada exitosamente',
+                'cita': serializer.data
+            })
+            
+        except Exception as e:
+            print(f" Error reprogramando cita: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {'detail': f'Error reprogramando cita: {str(e)}'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 

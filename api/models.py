@@ -167,7 +167,8 @@ class Cita(models.Model):
         ('Normal', 'Normal'),
         ('Urgencia', 'Urgencia'),
     )
-    paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE)
+    # paciente = models.ForeignKey(Paciente, on_delete=models.CASCADE)  # <-- reemplazado
+    usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE)      # <-- ahora apunta a Usuario
     medico = models.ForeignKey(Medico, on_delete=models.CASCADE)
     medico_especialidad = models.ForeignKey(MedicoEspecialidad, on_delete=models.CASCADE, related_name='citas', null=True, blank=True)
     # El box se puede derivar del Horario activo, no es obligatorio persistirlo

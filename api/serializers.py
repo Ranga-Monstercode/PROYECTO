@@ -197,7 +197,10 @@ class HorarioSerializer(serializers.ModelSerializer):
         return data
 
 class CitaSerializer(serializers.ModelSerializer):
-    paciente_nombre = serializers.CharField(source='paciente.usuario.nombre', read_only=True)
+    # antes: paciente_nombre = serializers.CharField(source='paciente.usuario.nombre', read_only=True)
+    usuario_nombre = serializers.CharField(source='usuario.nombre', read_only=True)
+    # compatibilidad (no eliminar): exponer también paciente_nombre como alias
+    paciente_nombre = serializers.CharField(source='usuario.nombre', read_only=True)
     medico_nombre = serializers.CharField(source='medico.usuario.nombre', read_only=True)
     especialidad_nombre = serializers.CharField(source='medico_especialidad.especialidad.nombre', read_only=True)
     box_nombre = serializers.SerializerMethodField()
@@ -206,7 +209,7 @@ class CitaSerializer(serializers.ModelSerializer):
         model = Cita
         fields = '__all__'
         extra_kwargs = {
-            'paciente': {'required': False},
+            'usuario': {'required': False},
             'medico': {'required': False},
             'medico_especialidad': {'required': False},
             'fechaHora': {'required': False},
@@ -274,25 +277,22 @@ class CitaSerializer(serializers.ModelSerializer):
         return value
     
     def validate(self, data):
-        #  SOLO validar si estamos CREANDO o si se está enviando fechaHora
         is_creating = not self.instance
         is_updating_fecha = 'fechaHora' in data
-        
-        # Solo validar paciente en creación
-        if is_creating and 'paciente' not in data:
+
+        # antes validábamos 'paciente'; ahora 'usuario'
+        if is_creating and 'usuario' not in data:
             raise serializers.ValidationError({
-                'paciente': 'El paciente es requerido'
+                'usuario': 'El usuario es requerido'
             })
-        
-        #  Solo validar horario si estamos creando o modificando la fecha
+
         if not is_creating and not is_updating_fecha:
-            # Es actualización parcial (estado, prioridad, etc.) - skip validaciones de horario
             return data
-            
+
         medico = data.get('medico', self.instance.medico if self.instance else None)
         me = data.get('medico_especialidad', self.instance.medico_especialidad if self.instance else None)
         fechaHora = data.get('fechaHora', self.instance.fechaHora if self.instance else None)
-        
+
         if not fechaHora:
             return data
         
