@@ -2,11 +2,14 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
-from django.contrib.auth.hashers import make_password, check_password  #  Agregar check_password
+from django.contrib.auth.hashers import make_password, check_password 
 from django.utils import timezone
 from datetime import datetime, timedelta
 import pytz
-from rest_framework_simplejwt.tokens import RefreshToken  # <- agregar
+from rest_framework_simplejwt.tokens import RefreshToken  
+from django.core.mail import EmailMessage  
+import qrcode  
+import io 
 
 from .models import (
     Usuario, Paciente, Administrador, Medico, MedicoEspecialidad,
@@ -377,18 +380,70 @@ class CitaViewSet(viewsets.ModelViewSet):
     queryset = Cita.objects.all()
     serializer_class = CitaSerializer
     
+    def _send_appointment_email(self, cita, subject, body, attach_qr=False):
+        """
+        Envía un correo al paciente de la cita. Opcionalmente adjunta un QR con el ID de la cita.
+        Usa DEFAULT_FROM_EMAIL configurado en settings.py.
+        """
+        try:
+            paciente_email = cita.usuario.correo
+            email = EmailMessage(subject, body, None, [paciente_email])
+
+            if attach_qr:
+                qr_data = str(cita.id)
+                qr_img = qrcode.make(qr_data)
+                buffer = io.BytesIO()
+                qr_img.save(buffer, format='PNG')
+                buffer.seek(0)
+                email.attach(f'cita_qr_{cita.id}.png', buffer.read(), 'image/png')
+
+            email.send(fail_silently=False)
+            print(f"✅ Correo enviado a {paciente_email} para la cita {cita.id}")
+        except Exception as e:
+            print(f"❌ Error al enviar correo para la cita {cita.id}: {str(e)}")
+
+    def perform_create(self, serializer):
+        """
+        Enviar correo al crear una cita: 'Hora Agendada - Pendiente de Aceptación'
+        """
+        cita = serializer.save()
+        asunto = "Hora Agendada - Pendiente de Aceptación"
+        cuerpo = (
+            f"Estimado/a {cita.usuario.nombre},\n\n"
+            f"Su cita ha sido agendada para el {cita.fechaHora.strftime('%d-%m-%Y a las %H:%M')} "
+            f"con el Dr(a). {cita.medico.usuario.nombre}.\n\n"
+            "Su cita está pendiente de confirmación por parte de nuestro personal. "
+            "Recibirá otro correo una vez que sea aceptada.\n\n"
+            "Gracias por preferirnos."
+        )
+        self._send_appointment_email(cita, asunto, cuerpo)
+
     def update(self, request, *args, **kwargs):
         """
-        Actualización completa (PUT)
+        Actualización completa (PUT) + email si cambia a Confirmada
         """
         try:
             partial = kwargs.pop('partial', False)
             instance = self.get_object()
-            
+            old_estado = instance.estado  # <- agregado
+
             serializer = self.get_serializer(instance, data=request.data, partial=partial)
             serializer.is_valid(raise_exception=True)
             self.perform_update(serializer)
-            
+
+            updated_instance = serializer.instance  # <- agregado
+            if old_estado != 'Confirmada' and updated_instance.estado == 'Confirmada':
+                asunto = "¡Tu Cita ha sido Confirmada!"
+                cuerpo = (
+                    f"Estimado/a {updated_instance.usuario.nombre},\n\n"
+                    f"Nos complace informarle que su cita para el "
+                    f"{updated_instance.fechaHora.strftime('%d-%m-%Y a las %H:%M')} "
+                    f"con el Dr(a). {updated_instance.medico.usuario.nombre} ha sido confirmada.\n\n"
+                    "Adjuntamos un código QR que puede presentar en recepción. ¡Le esperamos!\n\n"
+                    "Gracias por su confianza."
+                )
+                self._send_appointment_email(updated_instance, asunto, cuerpo, attach_qr=True)
+
             return Response(serializer.data)
         except Exception as e:
             print(f" Error actualizando cita: {str(e)}")
@@ -401,7 +456,7 @@ class CitaViewSet(viewsets.ModelViewSet):
     
     def partial_update(self, request, *args, **kwargs):
         """
-        Actualización parcial (PATCH) - solo actualiza los campos enviados
+        Actualización parcial (PATCH) - delega en update
         """
         kwargs['partial'] = True
         return self.update(request, *args, **kwargs)
@@ -409,21 +464,33 @@ class CitaViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['patch'], url_path='actualizar-estado')
     def actualizar_estado(self, request, pk=None):
         """
-        Endpoint para actualizar estado, prioridad y descripción de una cita
+        Actualiza estado/prioridad/descripcion; si estado cambia a Confirmada, envía email con QR
         """
         try:
             cita = self.get_object()
-            
-            # Actualizar campos permitidos
+            old_estado = cita.estado  # <- agregado
+
             if 'estado' in request.data:
                 cita.estado = request.data['estado']
             if 'prioridad' in request.data:
                 cita.prioridad = request.data['prioridad']
             if 'descripcion' in request.data:
                 cita.descripcion = request.data['descripcion']
-            
+
             cita.save()
-            
+
+            if old_estado != 'Confirmada' and cita.estado == 'Confirmada':
+                asunto = "¡Tu Cita ha sido Confirmada!"
+                cuerpo = (
+                    f"Estimado/a {cita.usuario.nombre},\n\n"
+                    f"Nos complace informarle que su cita para el "
+                    f"{cita.fechaHora.strftime('%d-%m-%Y a las %H:%M')} "
+                    f"con el Dr(a). {cita.medico.usuario.nombre} ha sido confirmada.\n\n"
+                    "Adjuntamos un código QR que puede presentar en recepción. ¡Le esperamos!\n\n"
+                    "Gracias por su confianza."
+                )
+                self._send_appointment_email(cita, asunto, cuerpo, attach_qr=True)
+
             serializer = self.get_serializer(cita)
             return Response(serializer.data)
         except Exception as e:

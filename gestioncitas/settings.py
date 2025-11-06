@@ -33,9 +33,9 @@ ALLOWED_HOSTS = ["*"]
 
 CORS_ALLOW_ALL_ORIGINS = True
 """CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",        # si corres Next.js en tu mismo PC
+    "http://localhost:3000",        
     "http://192.168.1.101:3000",
-    "http://127.0.0.1:3000",     IP
+    "http://127.0.0.1:3000",     
 ]"""
 
 # AUTH_USER_MODEL = 'api.Usuario'  # Solo si usas usuario personalizado como modelo de autenticación
@@ -69,26 +69,10 @@ CORS_ALLOWED_ORIGINS = [
 ]
 
 CORS_ALLOW_CREDENTIALS = True
-
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
-]
-
+CORS_ALLOW_METHODS = ['DELETE','GET','OPTIONS','PATCH','POST','PUT']
 CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
+    'accept','accept-encoding','authorization','content-type','dnt',
+    'origin','user-agent','x-csrftoken','x-requested-with',
 ]
 
 # Application definition
@@ -145,6 +129,7 @@ WSGI_APPLICATION = 'gestioncitas.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
+        # Producción (RDS) por defecto
         'NAME': config('DB_NAME', default='gestioncitasmedicas'),
         'USER': config('DB_USER', default='admin'),
         'PASSWORD': config('DB_PASSWORD', default='gestioncitasdb2025'),
@@ -209,7 +194,6 @@ USE_TZ = True
 
 STATIC_URL = '/static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 # Default primary key field type
@@ -217,3 +201,10 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'  
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = 'clinicainacap@gmail.com'
+EMAIL_HOST_PASSWORD = 'vowa zkuv kees bgsi'
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
