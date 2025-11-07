@@ -31,15 +31,21 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = ["*"]
 
+# CORS Configuration - Permitir todos los orígenes
 CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOWED_ORIGINS = [
-    "*"     
-]
+
+# ❌ Elimina o comenta esta línea - no es compatible con CORS_ALLOW_ALL_ORIGINS
+# CORS_ALLOWED_ORIGINS = [
+#     "*"     
+# ]
+
+# Si en el futuro necesitas restringir orígenes específicos, usa:
+# CORS_ALLOW_ALL_ORIGINS = False
 # CORS_ALLOWED_ORIGINS = [
 #     "http://localhost:3000",        
 #     "http://192.168.1.101:3000",
 #     "http://127.0.0.1:3000",
-#     "https://gestioncitas.vercel.app/"     
+#     "https://gestioncitas.vercel.app"  # ✅ Sin barra final
 # ]
 
 # AUTH_USER_MODEL = 'api.Usuario'  # Solo si usas usuario personalizado como modelo de autenticación
