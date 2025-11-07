@@ -33,6 +33,23 @@ ALLOWED_HOSTS = ["*"]
 
 # CORS Configuration - Permitir todos los orígenes
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Agregar estos headers adicionales para Railway
+CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
+CORS_PREFLIGHT_MAX_AGE = 86400
 
 # ❌ Elimina o comenta esta línea - no es compatible con CORS_ALLOW_ALL_ORIGINS
 # CORS_ALLOWED_ORIGINS = [
@@ -74,12 +91,6 @@ REST_FRAMEWORK = {
 
 
 
-CORS_ALLOW_CREDENTIALS = True
-CORS_ALLOW_METHODS = ['DELETE','GET','OPTIONS','PATCH','POST','PUT']
-CORS_ALLOW_HEADERS = [
-    'accept','accept-encoding','authorization','content-type','dnt',
-    'origin','user-agent','x-csrftoken','x-requested-with',
-]
 
 # Application definition
 
