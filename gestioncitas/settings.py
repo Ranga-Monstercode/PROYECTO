@@ -31,9 +31,16 @@ DEBUG = config('DEBUG', default=True, cast=bool)
 
 ALLOWED_HOSTS = ["*"]
 
-# CORS Configuration - Permitir todos los orígenes
-CORS_ALLOW_ALL_ORIGINS = True
+# CORS Configuration - Permitir orígenes concretos (mejor que permitir todos en producción)
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = [
+    "https://gestioncitas.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    # agrega otros orígenes necesarios
+]
+
 CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
 CORS_ALLOW_HEADERS = [
     'accept',
@@ -47,7 +54,6 @@ CORS_ALLOW_HEADERS = [
     'x-requested-with',
 ]
 
-# Agregar estos headers adicionales para Railway
 CORS_EXPOSE_HEADERS = ['Content-Type', 'X-CSRFToken']
 CORS_PREFLIGHT_MAX_AGE = 86400
 
@@ -65,7 +71,7 @@ CORS_PREFLIGHT_MAX_AGE = 86400
 #     "https://gestioncitas.vercel.app"  # ✅ Sin barra final
 # ]
 
-# AUTH_USER_MODEL = 'api.Usuario'  # Solo si usas usuario personalizado como modelo de autenticación
+AUTH_USER_MODEL = 'api.Usuario'  # Solo si usas usuario personalizado como modelo de autenticación
 
 # JWT Configuration
 SIMPLE_JWT = {
@@ -82,7 +88,7 @@ SIMPLE_JWT = {
 
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
-        'api.authentication.CustomJWTAuthentication',  # ✅ Usar autenticación personalizada
+        'api.authentication.CustomJWTAuthentication',  
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
