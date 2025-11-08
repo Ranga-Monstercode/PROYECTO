@@ -538,7 +538,7 @@ class CitaViewSet(viewsets.ModelViewSet):
             email = EmailMessage(subject, body, None, [paciente_email])
 
             if attach_qr:
-                qr_data = str(cita.id)
+                qr_data = f"https://gestioncitas.vercel.app/cita/{cita.id}"
                 qr_img = qrcode.make(qr_data)
                 buffer = io.BytesIO()
                 qr_img.save(buffer, format='PNG')

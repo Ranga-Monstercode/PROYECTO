@@ -268,6 +268,7 @@ class Notificacion(models.Model):
         ('Pendiente', 'Pendiente'),
         ('Enviada', 'Enviada'),
         ('Fallida', 'Fallida'),
+        ('Completada', 'Completada'),
     )
     cita = models.ForeignKey(Cita, on_delete=models.CASCADE)
     usuario = models.ForeignKey(Usuario, on_delete=models.CASCADE)
