@@ -38,8 +38,8 @@ CORS_ALLOWED_ORIGINS = [
     "https://gestioncitas.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://52.86.212.21",
-    "https://proyecto-production-c22e.up.railway.app",
+    "http://52.86.212.21:3000",
+    "https://proyecto-production-c22e.up.railway.app"
 ]
 
 CORS_ALLOW_METHODS = ['DELETE', 'GET', 'OPTIONS', 'PATCH', 'POST', 'PUT']
