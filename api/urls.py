@@ -10,7 +10,7 @@ from .views import (
     registrar_cliente, login, verificar_rut, verificar_o_crear_rut, actualizar_usuario_con_historial,
     UsuarioViewSet, PacienteViewSet, AdministradorViewSet,
     MedicoViewSet, CitaViewSet, NotificacionViewSet, HorarioViewSet,
-    EspecialidadViewSet, MedicoEspecialidadViewSet, BoxViewSet
+    EspecialidadViewSet, MedicoEspecialidadViewSet, BoxViewSet, RecordatorioViewSet
 )
 
 router = DefaultRouter()
@@ -24,6 +24,7 @@ router.register(r'horarios', HorarioViewSet)
 router.register(r'especialidades', EspecialidadViewSet)
 router.register(r'medico-especialidades', MedicoEspecialidadViewSet)
 router.register(r'boxes', BoxViewSet)
+router.register(r'recordatorios', RecordatorioViewSet)
 
 urlpatterns = [
     path('registrar/', registrar_cliente, name='registrar'),

@@ -3,7 +3,7 @@ from rest_framework.exceptions import ValidationError
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from datetime import datetime, timedelta
-from .models import Usuario, Paciente, Administrador, Medico, MedicoEspecialidad, Cita, Notificacion, Horario, Especialidad, Box
+from .models import Usuario, Paciente, Administrador, Medico, MedicoEspecialidad, Cita, Notificacion, Horario, Especialidad, Box, Recordatorio
 
 class UsuarioSerializer(serializers.ModelSerializer):
     class Meta:
@@ -396,3 +396,11 @@ class NotificacionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Notificacion
         fields = ['id', 'cita', 'usuario', 'tipo', 'mensaje', 'fechaEnvio', 'estado']
+
+class RecordatorioSerializer(serializers.ModelSerializer):
+    cita_id = serializers.IntegerField(source='cita.id', read_only=True)
+    usuario_correo = serializers.EmailField(source='cita.usuario.correo', read_only=True)
+
+    class Meta:
+        model = Recordatorio
+        fields = ['id', 'cita_id', 'fecha_programada', 'enviado', 'fecha_envio', 'usuario_correo']

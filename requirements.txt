@@ -9,3 +9,4 @@ python-decouple==3.8
 dj-database-url==2.2.0
 pytz==2024.2
 qrcode==8.2
+celery==5.5.3

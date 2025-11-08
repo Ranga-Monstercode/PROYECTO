@@ -1,6 +1,6 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action, permission_classes
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.contrib.auth.hashers import make_password, check_password 
 from django.utils import timezone
@@ -13,13 +13,13 @@ import io
 
 from .models import (
     Usuario, Paciente, Administrador, Medico, MedicoEspecialidad,
-    Cita, Notificacion, Horario, Especialidad, Box
+    Cita, Notificacion, Horario, Especialidad, Box, Recordatorio
 )
 from .serializers import (
     UsuarioSerializer, PacienteSerializer, AdministradorSerializer,
     MedicoSerializer, MedicoEspecialidadSerializer,
     CitaSerializer, NotificacionSerializer, HorarioSerializer,
-    EspecialidadSerializer, BoxSerializer
+    EspecialidadSerializer, BoxSerializer, RecordatorioSerializer
 )
 
 @api_view(['POST'])
@@ -377,13 +377,161 @@ class HorarioViewSet(viewsets.ModelViewSet):
         return qs
 
 class CitaViewSet(viewsets.ModelViewSet):
+    """
+    Citas: los resultados se limitan según el usuario autenticado:
+      - Administrador: SOLO sus propias citas en GET list (como paciente)
+                      TODAS las citas para operaciones CRUD individuales
+      - Médico: citas donde medico.usuario == request.user
+      - Paciente: citas donde usuario == request.user
+    """
     queryset = Cita.objects.all()
     serializer_class = CitaSerializer
-    
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        
+        # ✅ Si es admin y está haciendo una operación sobre una cita específica
+        is_detail_action = self.action in ['retrieve', 'update', 'partial_update', 'destroy']
+        is_admin = (getattr(user, 'is_superuser', False) or 
+                   getattr(user, 'is_staff', False) or 
+                   getattr(user, 'rol', '') in ('Administrador', 'Admin'))
+        
+        if is_admin and is_detail_action:
+            print(f"🔓 [CitaViewSet] Admin accediendo a operación: {self.action} - SIN FILTRO")
+            # ✅ Optimizar también las queries individuales
+            return Cita.objects.select_related(
+                'usuario',
+                'medico',
+                'medico__usuario',
+                'medico_especialidad',
+                'medico_especialidad__especialidad'
+            )
+        
+        # Médico: buscar el objeto Medico asociado al usuario
+        medico_obj = None
+        try:
+            medico_obj = Medico.objects.filter(usuario=user).first()
+            print(f" medico_obj = {medico_obj!r} (id={getattr(medico_obj,'pk',None)})")
+        except Exception as e:
+            print(f" error buscando Medico link: {e}")
+
+        if medico_obj:
+            qs = Cita.objects.filter(medico=medico_obj).select_related(
+                'usuario',
+                'medico',
+                'medico__usuario',
+                'medico_especialidad',
+                'medico_especialidad__especialidad'
+            ).order_by('-fechaHora')
+            print(f" devolver queryset: MEDICO. count={qs.count()}")
+            return qs
+
+        try:
+            qs = Cita.objects.filter(usuario=user).select_related(
+                'usuario',
+                'medico',
+                'medico__usuario',
+                'medico_especialidad',
+                'medico_especialidad__especialidad'
+            ).order_by('-fechaHora')
+            print(f" devolver queryset: USUARIO. count={qs.count()}")
+            return qs
+        except Exception as e:
+            print(f" error filtrando por usuario: {e}")
+            return Cita.objects.none()
+
+    @action(detail=False, methods=['get'], url_path='admin-todas')
+    def admin_todas(self, request):
+        """
+        Endpoint exclusivo para administradores: devuelve TODAS las citas
+        URL: /api/citas/admin-todas/
+        ✅ OPTIMIZADO con select_related para reducir queries
+        """
+        user = request.user
+        
+        print(f"🔍 [admin_todas] Usuario: {user.nombre}, Rol: {user.rol}")
+        
+        # Verificar que sea admin
+        if not (getattr(user, 'is_superuser', False) or 
+                getattr(user, 'is_staff', False) or 
+                getattr(user, 'rol', '') in ('Administrador', 'Admin')):
+            return Response(
+                {'detail': 'No tiene permisos para acceder a este recurso'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # ✅ Optimizar con select_related para evitar N+1 queries
+        qs = Cita.objects.select_related(
+            'usuario',
+            'medico',
+            'medico__usuario',
+            'medico_especialidad',
+            'medico_especialidad__especialidad'
+        ).order_by('-fechaHora')
+        
+        print(f"📊 [admin_todas] Devolviendo {qs.count()} citas")
+        
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
+    def perform_create(self, serializer):
+        # Debug detallado al crear cita
+        try:
+            req_user = self.request.user
+            auth_header = self.request.META.get('HTTP_AUTHORIZATION')
+            print("===== [CitaViewSet.perform_create] START =====")
+            print(f" request.path = {self.request.path}")
+            print(f" request.method = {self.request.method}")
+            print(f" request.user = {req_user!r}")
+            print(f" request.user.id = {getattr(req_user, 'id', None)}")
+            print(f" request.user.is_authenticated = {getattr(req_user, 'is_authenticated', False)}")
+            print(f" request.user.rol = {getattr(req_user, 'rol', None)}")
+            print(f" HTTP_AUTHORIZATION present = {'YES' if auth_header else 'NO'} -> {auth_header}")
+            print(f" incoming payload (request.data) = {self.request.data}")
+        except Exception as e:
+            print(f" error logging create context: {e}")
+
+        # Política segura: si cliente no especifica 'usuario' --> forzar request.user
+        try:
+            incoming_usuario = self.request.data.get('usuario') if isinstance(self.request.data, dict) else None
+        except Exception:
+            incoming_usuario = None
+
+        try:
+            if not incoming_usuario:
+                cita = serializer.save(usuario=self.request.user)
+                print(f" Cita creada FORZANDO usuario=request.user -> cita.id={getattr(cita,'id',None)} usuario_id={getattr(cita.usuario,'id',None)}")
+            else:
+                # Si el cliente envió usuario explícito, aún logueamos y guardamos (según política actual)
+                cita = serializer.save()
+                print(f" Cita creada usando payload usuario -> cita.id={getattr(cita,'id',None)} usuario_id={getattr(cita.usuario,'id',None)} (payload_usuario={incoming_usuario})")
+        except Exception as e:
+            print(f" Error al guardar cita: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
+
+        # enviar email (si aplica) - mantener comportamiento previo si existe
+        try:
+            asunto = "Hora Agendada - Pendiente de Aceptación"
+            cuerpo = (
+                f"Estimado/a {cita.usuario.nombre},\n\n"
+                f"Su cita ha sido agendada para el {cita.fechaHora.strftime('%d-%m-%Y a las %H:%M')} "
+                f"con el Dr(a). {cita.medico.usuario.nombre}.\n\n"
+                "Su cita está pendiente de confirmación por parte de nuestro personal. "
+                "Recibirá otro correo una vez que sea aceptada.\n\n"
+                "Gracias por preferirnos."
+            )
+            self._send_appointment_email(cita, asunto, cuerpo)
+            print(f" Email enviado / intento realizado para cita.id={getattr(cita,'id',None)}")
+        except Exception as e:
+            print(f" Error enviando email en perform_create: {e}")
+        print("===== [CitaViewSet.perform_create] END =====")
+
     def _send_appointment_email(self, cita, subject, body, attach_qr=False):
         """
-        Envía un correo al paciente de la cita. Opcionalmente adjunta un QR con el ID de la cita.
-        Usa DEFAULT_FROM_EMAIL configurado en settings.py.
+        Enviar correo de notificación de cita
         """
         try:
             paciente_email = cita.usuario.correo
@@ -402,21 +550,23 @@ class CitaViewSet(viewsets.ModelViewSet):
         except Exception as e:
             print(f"❌ Error al enviar correo para la cita {cita.id}: {str(e)}")
 
-    def perform_create(self, serializer):
+    def _format_dt_chile(self, dt):
         """
-        Enviar correo al crear una cita: 'Hora Agendada - Pendiente de Aceptación'
+        Devuelve 'dd-mm-YYYY a las HH:MM (am/pm)' convirtiendo desde UTC a America/Santiago.
         """
-        cita = serializer.save()
-        asunto = "Hora Agendada - Pendiente de Aceptación"
-        cuerpo = (
-            f"Estimado/a {cita.usuario.nombre},\n\n"
-            f"Su cita ha sido agendada para el {cita.fechaHora.strftime('%d-%m-%Y a las %H:%M')} "
-            f"con el Dr(a). {cita.medico.usuario.nombre}.\n\n"
-            "Su cita está pendiente de confirmación por parte de nuestro personal. "
-            "Recibirá otro correo una vez que sea aceptada.\n\n"
-            "Gracias por preferirnos."
-        )
-        self._send_appointment_email(cita, asunto, cuerpo)
+        try:
+            chile_tz = pytz.timezone('America/Santiago')
+            # Si viene naive, asumir UTC (DB guarda UTC)
+            if timezone.is_naive(dt):
+                dt = timezone.make_aware(dt, timezone.utc)
+            dt_cl = dt.astimezone(chile_tz)
+            fecha = dt_cl.strftime('%d-%m-%Y')
+            hora24 = dt_cl.strftime('%H:%M')
+            ampm = dt_cl.strftime('%p').lower()  # am | pm
+            return f"{fecha} a las {hora24} ({ampm})"
+        except Exception:
+            # Fallback simple
+            return dt.strftime('%d-%m-%Y a las %H:%M')
 
     def update(self, request, *args, **kwargs):
         """
@@ -434,10 +584,11 @@ class CitaViewSet(viewsets.ModelViewSet):
             updated_instance = serializer.instance  # <- agregado
             if old_estado != 'Confirmada' and updated_instance.estado == 'Confirmada':
                 asunto = "¡Tu Cita ha sido Confirmada!"
+                
+                fecha_hora_cl = self._format_dt_chile(updated_instance.fechaHora)
                 cuerpo = (
                     f"Estimado/a {updated_instance.usuario.nombre},\n\n"
-                    f"Nos complace informarle que su cita para el "
-                    f"{updated_instance.fechaHora.strftime('%d-%m-%Y a las %H:%M')} "
+                    f"Nos complace informarle que su cita para el {fecha_hora_cl} "
                     f"con el Dr(a). {updated_instance.medico.usuario.nombre} ha sido confirmada.\n\n"
                     "Adjuntamos un código QR que puede presentar en recepción. ¡Le esperamos!\n\n"
                     "Gracias por su confianza."
@@ -481,10 +632,10 @@ class CitaViewSet(viewsets.ModelViewSet):
 
             if old_estado != 'Confirmada' and cita.estado == 'Confirmada':
                 asunto = "¡Tu Cita ha sido Confirmada!"
+                fecha_hora_cl = self._format_dt_chile(cita.fechaHora)
                 cuerpo = (
                     f"Estimado/a {cita.usuario.nombre},\n\n"
-                    f"Nos complace informarle que su cita para el "
-                    f"{cita.fechaHora.strftime('%d-%m-%Y a las %H:%M')} "
+                    f"Nos complace informarle que su cita para el {fecha_hora_cl} "
                     f"con el Dr(a). {cita.medico.usuario.nombre} ha sido confirmada.\n\n"
                     "Adjuntamos un código QR que puede presentar en recepción. ¡Le esperamos!\n\n"
                     "Gracias por su confianza."
@@ -879,6 +1030,21 @@ class CitaViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK
         )
 
+    def _crear_recordatorio_cita(self, cita):
+        try:
+            if cita.estado != 'Confirmada':
+                return
+            if hasattr(cita, 'recordatorio'):
+                return
+            fecha_programada = cita.fechaHora - timedelta(days=1)
+            # Si ya pasó, no crear
+            if fecha_programada <= timezone.now():
+                return
+            Recordatorio.objects.create(cita=cita, fecha_programada=fecha_programada)
+            print(f"✅ Recordatorio creado para cita {cita.id} el {fecha_programada}")
+        except Exception as e:
+            print(f"❌ Error creando recordatorio cita {cita.id}: {e}")
+
 class NotificacionViewSet(viewsets.ModelViewSet):
     queryset = Notificacion.objects.all()
     serializer_class = NotificacionSerializer
@@ -926,6 +1092,11 @@ class MedicoViewSet(viewsets.ModelViewSet):
         horarios = Horario.objects.filter(medico_especialidad__medico=medico)
         serializer = HorarioSerializer(horarios, many=True)
         return Response(serializer.data)
+
+class RecordatorioViewSet(viewsets.ModelViewSet):
+    queryset = Recordatorio.objects.all()
+    serializer_class = RecordatorioSerializer
+    permission_classes = [IsAuthenticated]
 
 @api_view(['POST'])
 @permission_classes([AllowAny])

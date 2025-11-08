@@ -275,3 +275,15 @@ class Notificacion(models.Model):
     mensaje = models.CharField(max_length=255, blank=True, null=True)
     fechaEnvio = models.DateTimeField(blank=True, null=True)
     estado = models.CharField(max_length=10, choices=ESTADOS, default='Pendiente')
+
+class Recordatorio(models.Model):
+    cita = models.OneToOneField(Cita, on_delete=models.CASCADE, related_name='recordatorio')
+    fecha_programada = models.DateTimeField()   # cuándo debe enviarse
+    enviado = models.BooleanField(default=False)
+    fecha_envio = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['fecha_programada']
+
+    def __str__(self):
+        return f"Recordatorio cita {self.cita.id} -> {self.fecha_programada} (enviado={self.enviado})"
