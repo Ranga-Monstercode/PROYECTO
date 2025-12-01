@@ -38,7 +38,7 @@ CORS_ALLOWED_ORIGINS = [
     "https://gestioncitas.vercel.app",
     "http://localhost:3000",
     "http://127.0.0.1:3000",
-    "http://52.86.212.21:3000",
+    "http://3.225.226.145:3000",
     "https://proyecto-production-c22e.up.railway.app"
 ]
 
@@ -145,7 +145,7 @@ DATABASES = {
         'NAME': config('DB_NAME', default='gestioncitasmedicas'),
         'USER': config('DB_USER', default='admin'),
         'PASSWORD': config('DB_PASSWORD', default='gestioncitasdb2025'),
-        'HOST': config('DB_HOST', default='dbpruebas.c12240wame58.us-east-1.rds.amazonaws.com'),
+        'HOST': config('DB_HOST', default='db-gestioncitas.cl06uwkguij7.us-east-1.rds.amazonaws.com'),
         'PORT': config('DB_PORT', default='3306'),
         'OPTIONS': {
             'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
