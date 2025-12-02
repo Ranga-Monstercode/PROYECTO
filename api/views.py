@@ -584,8 +584,8 @@ class CitaViewSet(viewsets.ModelViewSet):
             updated_instance = serializer.instance  # <- agregado
             if old_estado != 'Confirmada' and updated_instance.estado == 'Confirmada':
                 asunto = "¡Tu Cita ha sido Confirmada!"
-                
                 fecha_hora_cl = self._format_dt_chile(updated_instance.fechaHora)
+                # FIX: La variable 'cuerpo' debe definirse aquí
                 cuerpo = (
                     f"Estimado/a {updated_instance.usuario.nombre},\n\n"
                     f"Nos complace informarle que su cita para el {fecha_hora_cl} "
@@ -593,7 +593,7 @@ class CitaViewSet(viewsets.ModelViewSet):
                     "Adjuntamos un código QR que puede presentar en recepción. ¡Le esperamos!\n\n"
                     "Gracias por su confianza."
                 )
-                self._send_appointment_email(updated_instance, asunto, cuerpo, attach_qr=True)
+                self._send_appointment_email(updated_instance, asunto, cuerpo, attach_qr=True) # Ahora 'cuerpo' está definida
 
             return Response(serializer.data)
         except Exception as e:
@@ -1208,4 +1208,3 @@ def login_view(request):
             {'detail': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
-
