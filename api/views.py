@@ -1208,3 +1208,73 @@ def login_view(request):
             {'detail': str(e)}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def kpis(request):
+    """
+    KPIs para panel de administración:
+      - nuevos pacientes: current_month, last_month, percentage_change
+      - citas: current_month, last_month, percentage_change
+      - upcoming_confirmed: confirmadas próximas 30 días
+      - pending_total: total pendientes
+    Solo accesible por administradores.
+    """
+    user = request.user
+    if not (getattr(user, 'is_superuser', False) or getattr(user, 'is_staff', False) or getattr(user, 'rol', '') in ('Administrador', 'Admin')):
+        return Response({'detail': 'No tiene permisos para acceder a este recurso'}, status=status.HTTP_403_FORBIDDEN)
+
+    try:
+        from django.utils import timezone as django_tz
+
+        now = django_tz.now()
+        # inicio mes actual
+        start_current = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+        # calcular inicio mes siguiente y mes anterior sin dependencias externas
+        if start_current.month == 12:
+            start_next = start_current.replace(year=start_current.year + 1, month=1)
+        else:
+            start_next = start_current.replace(month=start_current.month + 1)
+
+        if start_current.month == 1:
+            prev_year = start_current.year - 1
+            prev_month = 12
+        else:
+            prev_year = start_current.year
+            prev_month = start_current.month - 1
+        start_prev = start_current.replace(year=prev_year, month=prev_month)
+
+        # Nuevos pacientes (usar Usuario.fecha_registro con rol='Paciente')
+        new_patients_current = Usuario.objects.filter(rol='Paciente', fecha_registro__gte=start_current, fecha_registro__lt=start_next).count()
+        new_patients_prev = Usuario.objects.filter(rol='Paciente', fecha_registro__gte=start_prev, fecha_registro__lt=start_current).count()
+
+        # Citas por mes (contar todas)
+        citas_current = Cita.objects.filter(fechaHora__gte=start_current, fechaHora__lt=start_next).count()
+        citas_prev = Cita.objects.filter(fechaHora__gte=start_prev, fechaHora__lt=start_current).count()
+
+        def pct_change(curr, prev):
+            if prev == 0:
+                return None if curr == 0 else 100.0
+            return round(((curr - prev) / prev) * 100.0, 2)
+
+        kpis_data = {
+            "new_patients": {
+                "current_month": new_patients_current,
+                "last_month": new_patients_prev,
+                "percentage_change": pct_change(new_patients_current, new_patients_prev)
+            },
+            "citas": {
+                "current_month": citas_current,
+                "last_month": citas_prev,
+                "percentage_change": pct_change(citas_current, citas_prev)
+            },
+            "upcoming_confirmed": Cita.objects.filter(estado='Confirmada', fechaHora__gte=now, fechaHora__lte=now + timedelta(days=30)).count(),
+            "pending_total": Cita.objects.filter(estado='Pendiente').count()
+        }
+
+        return Response(kpis_data)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

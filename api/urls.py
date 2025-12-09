@@ -8,6 +8,7 @@ from rest_framework_simplejwt.views import (
 from .views import (
     login_view,
     registrar_cliente, login, verificar_rut, verificar_o_crear_rut, actualizar_usuario_con_historial,
+    kpis,   # <- agregado
     UsuarioViewSet, PacienteViewSet, AdministradorViewSet,
     MedicoViewSet, CitaViewSet, NotificacionViewSet, HorarioViewSet,
     EspecialidadViewSet, MedicoEspecialidadViewSet, BoxViewSet, RecordatorioViewSet
@@ -33,6 +34,7 @@ urlpatterns = [
     path('verificar-rut/', verificar_rut, name='verificar-rut'),
     path('verificar-o-crear-rut/', verificar_o_crear_rut, name='verificar-o-crear-rut'),
     path('actualizar-usuario-historial/', actualizar_usuario_con_historial, name='actualizar-usuario-historial'),
+    path('kpis/', kpis, name='kpis'),  # <- nuevo endpoint
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('token/verify/', TokenVerifyView.as_view(), name='token_verify'),
